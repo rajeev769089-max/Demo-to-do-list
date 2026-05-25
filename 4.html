@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit & Streak Tracker</title>
+    <style>
+        :root {
+            --bg: #121214;
+            --card-bg: #1a1a1e;
+            --text: #ffffff;
+            --text-dim: #a1a1aa;
+            --primary: #4caf50;
+            --high: #ef4444;
+            --medium: #f59e0b;
+            --low: #10b981;
+            --border: #27272a;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.4);
+        }
+        .streak-card {
+            text-align: center;
+            background: linear-gradient(135deg, #1a1a1e 0%, #2e1a1a 100%);
+            border-color: #ff450033;
+        }
+        .streak-number {
+            font-size: 3rem;
+            font-weight: 800;
+            margin: 8px 0;
+            color: #ff4500;
+            text-shadow: 0 0 15px rgba(255, 69, 0, 0.4);
+        }
+        h2 { margin-top: 0; font-size: 1.3rem; color: var(--text); display: flex; align-items: center; gap: 8px;}
+        input, select, button {
+            width: 100%;
+            padding: 12px;
+            background: #27272a;
+            border: 1px solid var(--border);
+            color: white;
+            border-radius: 8px;
+            font-size: 15px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        button {
+            background: var(--primary);
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        button:active { opacity: 0.8; }
+        .section-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+            display: block;
+        }
+        .days-selector {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            gap: 4px;
+        }
+        .day-tag {
+            flex: 1;
+            text-align: center;
+            padding: 8px 0;
+            background: #27272a;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            user-select: none;
+        }
+        .day-tag.selected {
+            background: #4caf5022;
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        ul { list-style: none; padding: 0; margin: 15px 0 0 0; }
+        li {
+            background: #202024;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid var(--border);
+        }
+        li.High { border-left-color: var(--high); }
+        li.Medium { border-left-color: var(--medium); }
+        li.Low { border-left-color: var(--low); }
+        .task-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+        .completed span { text-decoration: line-through; color: var(--text-dim); }
+        .btn-action { background: none; border: none; color: #ff4444; width: auto; margin: 0; padding: 4px; cursor: pointer;}
+        .flex-row { display: flex; gap: 8px; align-items: center; }
+        input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- STREAK TRACKER -->
+    <div class="card streak-card">
+        <h2>⚡ Streak Engine</h2>
+        <div class="streak-number" id="streakDisplay">0 Days</div>
+        <p style="margin: 0; font-size: 12px; color: var(--text-dim);" id="streakStatus">Complete 3 High Priority tasks today to earn your 🔥 icon!</p>
+    </div>
+
+    <!-- DAILY GOALS & TASKS -->
+    <div class="card">
+        <h2>📅 Daily Focus & Habits</h2>
+        <input type="text" id="taskInput" placeholder="What is your focus task?">
+        
+        <span class="section-label">Select Priority</span>
+        <select id="prioritySelect">
+            <option value="High">🔴 High Priority</option>
+            <option value="Medium">🟡 Medium Priority</option>
+            <option value="Low">🟢 Low Priority</option>
+        </select>
+
+        <span class="section-label">Select Active Days (Leave blank for Everyday)</span>
+        <div class="days-selector" id="daysWrapper">
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Mon">M</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Tue">T</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Wed">W</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Thu">T</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Fri">F</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Sat">S</div>
+            <div class="day-tag" onclick="toggleDayTag(this)" data-day="Sun">S</div>
+        </div>
+
+        <button onclick="addDailyTask()">Deploy Task</button>
+        <ul id="dailyList"></ul>
+    </div>
+
+    <!-- MONTHLY GOALS -->
+    <div class="card">
+        <h2>🏆 Long-Term Monthly Intentions</h2>
+        <div class="flex-row" style="margin-bottom: 0;">
+            <input type="text" id="monthInput" placeholder="Add a milestone for this month..." style="margin-bottom:0;">
+            <button onclick="addMonthlyGoal()" style="width:auto; margin-top:0; white-space:nowrap; padding: 12px 16px;">Add</button>
+        </div>
+        <ul id="monthlyList"></ul>
+    </div>
+
+</div>
+
+<script>
+    let appState = {
+        dailyTasks: [],
+        monthlyGoals: [],
+        streak: 0,
+        streakQualifiedToday: false
+    };
+
+    window.onload = function() {
+        const savedData = localStorage.getItem('gamified_todo_state');
+        if (savedData) {
+            try {
+                appState = JSON.parse(savedData);
+            } catch(e) {
+                console.log("Error parsing data, resetting.");
+            }
+        }
+        renderDailyTasks();
+        renderMonthlyGoals();
+        updateStreakDisplay();
+    };
+
+    function saveState() {
+        localStorage.setItem('gamified_todo_state', JSON.stringify(appState));
+    }
+
+    function toggleDayTag(el) {
+        el.classList.toggle('selected');
+    }
+
+    function addDailyTask() {
+        const input = document.getElementById('taskInput');
+        const priority = document.getElementById('prioritySelect').value;
+        
+        if (!input || input.value.trim() === '') {
+            alert('Please type a task name first!');
+            return;
+        }
+
+        // Check selected tags
+        const selectedDays = Array.from(document.querySelectorAll('.day-tag.selected')).map(el => el.dataset.day);
+        let frequencyText = "Everyday";
+        if (selectedDays.length > 0) {
+            frequencyText = selectedDays.join(', ');
+        }
+
+        appState.dailyTasks.push({
+            id: Date.now(),
+            text: input.value.trim(),
+            priority: priority,
+            frequency: frequencyText,
+            completed: false
+        });
+
+        // Reset inputs
+        input.value = '';
+        document.querySelectorAll('.day-tag').forEach(el => el.classList.remove('selected'));
+        
+        saveState();
+        renderDailyTasks();
+        checkStreakEligibility();
+    }
+
+    function renderDailyTasks() {
+        const list = document.getElementById('dailyList');
+        if (!list) return;
+        list.innerHTML = '';
+        
+        appState.dailyTasks.forEach(task => {
+            const li = document.createElement('li');
+            li.className = `${task.priority} ${task.completed ? 'completed' : ''}`;
+            li.innerHTML = `
+                <div class="flex-row">
+                    <input type="checkbox" ${task.completed ? 'checked' : ''} onclick="toggleDailyComplete(${task.id})">
+                    <div>
+                        <span>${task.text}</span>
+                        <div class="task-meta">⏱️ ${task.frequency}</div>
+                    </div>
+                </div>
+                <button class="btn-action" onclick="deleteDaily(${task.id})">🗑️</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    function toggleDailyComplete(id) {
+        const task = appState.dailyTasks.find(t => t.id === id);
+        if (task) {
+            task.completed = !task.completed;
+            saveState();
+            renderDailyTasks();
+            checkStreakEligibility();
+        }
+    }
+
+    function deleteDaily(id) {
+        appState.dailyTasks = appState.dailyTasks.filter(t => t.id !== id);
+        saveState();
+        renderDailyTasks();
+        checkStreakEligibility();
+    }
+
+    function checkStreakEligibility() {
+        const highPriorityCompleted = appState.dailyTasks.filter(t => t.priority === 'High' && t.completed).length;
+        
+        if (highPriorityCompleted >= 3) {
+            if (!appState.streakQualifiedToday) {
+                appState.streakQualifiedToday = true;
+                appState.streak += 1;
+            }
+        } else {
+            if (appState.streakQualifiedToday) {
+                appState.streakQualifiedToday = false;
+                appState.streak = Math.max(0, appState.streak - 1);
+            }
+        }
+        saveState();
+        updateStreakDisplay();
+    }
+
+    function updateStreakDisplay() {
+        const display = document.getElementById('streakDisplay');
+        const status = document.getElementById('streakStatus');
+        if (!display || !status) return;
+        
+        if (appState.streak === 0) {
+            display.innerText = "0 Days";
+            status.innerText = "Complete 3 High Priority tasks today to trigger your 🔥 streak!";
+        } else if (appState.streak < 7) {
+            display.innerText = "🔥".repeat(appState.streak);
+            status.innerHTML = `Keep it up! Current streak progress cycle: <b>${appState.streak} Days</b>`;
+        } else {
+            display.innerText = `${appState.streak} Days 🔥`;
+            status.innerHTML = `Incredible focus! Continuous streak engine active.`;
+        }
+    }
+
+    function addMonthlyGoal() {
+        const input = document.getElementById('monthInput');
+        if (!input || input.value.trim() === '') return;
+
+        appState.monthlyGoals.push({
+            id: Date.now(),
+            text: input.value.trim(),
+            completed: false
+        });
+
+        input.value = '';
+        saveState();
+        renderMonthlyGoals();
+    }
+
+    function renderMonthlyGoals() {
+        const list = document.getElementById('monthlyList');
+        if (!list) return;
+        list.innerHTML = '';
+        
+        appState.monthlyGoals.forEach(goal => {
+            const li = document.createElement('li');
+            li.className = goal.completed ? 'completed' : '';
+            li.innerHTML = `
+                <div class="flex-row">
+                    <input type="checkbox" ${goal.completed ? 'checked' : ''} onclick="toggleMonthlyComplete(${goal.id})">
+                    <span>${goal.text}</span>
+                </div>
+                <button class="btn-action" onclick="deleteMonthly(${goal.id})">🗑️</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    function toggleMonthlyComplete(id) {
+        const goal = appState.monthlyGoals.find(g => g.id === id);
+        if (goal) {
+            goal.completed = !goal.completed;
+            saveState();
+            renderMonthlyGoals();
+        }
+    }
+
+    function deleteMonthly(id) {
+        appState.monthlyGoals = appState.monthlyGoals.filter(g => g.id !== id);
+        saveState();
+        renderMonthlyGoals();
+    }
+</script>
+
+</body>
+</html>
