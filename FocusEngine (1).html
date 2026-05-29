@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Focus Engine</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #07070a;
+            --card-glass: rgba(18, 18, 24, 0.75);
+            --border-glass: rgba(255, 255, 255, 0.05);
+            --text: #f8fafc;
+            --text-dim: #64748b;
+            --primary: #10b981;
+            --accent: #f97316;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --nav-bg: rgba(10, 10, 14, 0.92);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg); color: var(--text); padding-bottom: 95px;
+            min-height: 100vh; display: flex; justify-content: center;
+        }
+        .container { width: 100%; max-width: 480px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+        /* CLOCK PANEL - no z-index, no position, no pointer-events issues */
+        .time-panel {
+            background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px; padding: 14px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.37);
+        }
+        .time-day { font-size: 15px; font-weight: 800; color: #fff; }
+        .time-date { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+        .time-clock { font-size: 20px; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; text-shadow: 0 0 12px rgba(16,185,129,0.3); }
+
+        .card {
+            background: var(--card-glass); border: 1px solid var(--border-glass);
+            border-radius: 24px; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+        }
+        h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; color: #f1f5f9; }
+
+        /* Dashboard ring */
+        .dashboard-row { display: flex; gap: 16px; align-items: center; }
+        .ring-container { position: relative; width: 85px; height: 85px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .ring-svg { transform: rotate(-90deg); width: 85px; height: 85px; }
+        .ring-bg { fill: none; stroke: rgba(255,255,255,0.03); stroke-width: 8; }
+        .ring-fill { fill: none; stroke: url(#gradientRing); stroke-width: 8; stroke-linecap: round; stroke-dasharray: 220; stroke-dashoffset: 220; transition: stroke-dashoffset 0.5s ease; }
+        .ring-text { position: absolute; font-size: 18px; font-weight: 800; color: #fff; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .ring-text span { font-size: 9px; font-weight: 500; color: var(--text-dim); margin-top: -2px; }
+        .dashboard-info { flex: 1; }
+        .dashboard-streak { font-size: 1.2rem; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+        .progress-wrapper { margin-top: 8px; }
+        .progress-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+        .progress-track { background: rgba(255,255,255,0.04); border-radius: 10px; height: 8px; overflow: hidden; }
+        .progress-fill { background: linear-gradient(90deg, #10b981, #34d399); height: 100%; width: 0%; transition: width 0.4s ease; }
+
+        /* North star */
+        .north-star { background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(249,115,22,0.02)); border: 1px solid rgba(16,185,129,0.15); margin-bottom: 16px; }
+        .north-star-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--primary); font-weight: 700; margin-bottom: 2px; }
+        .north-star-text { font-size: 13px; font-weight: 500; color: #cbd5e1; }
+
+        /* Lists */
+        ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+        li { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.03); padding: 14px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; }
+        li.completed { background: rgba(16,185,129,0.02); border-color: rgba(16,185,129,0.08); }
+        li.completed .item-text { text-decoration: line-through; color: var(--text-dim); }
+        .flex-row { display: flex; gap: 12px; align-items: center; }
+        .item-text { font-size: 14px; font-weight: 500; color: #e2e8f0; }
+        .item-subtext { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+        /* Checkbox */
+        input[type="checkbox"] {
+            appearance: none; -webkit-appearance: none; width: 22px; height: 22px;
+            border: 2px solid rgba(255,255,255,0.15); border-radius: 7px; background: transparent;
+            display: grid; place-content: center; cursor: pointer; flex-shrink: 0;
+        }
+        input[type="checkbox"]:checked { border-color: var(--primary); background: var(--primary); }
+        input[type="checkbox"]:checked::before { content: ""; width: 10px; height: 6px; border-left: 2px solid white; border-bottom: 2px solid white; transform: rotate(-45deg) translate(1px, -1px); display: block; }
+
+        .btn-delete { background: none; border: none; color: #475569; font-size: 14px; cursor: pointer; padding: 4px 6px; }
+        .badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+        .badge-weight { background: rgba(249,115,22,0.08); color: var(--accent); }
+        .badge-sprint { background: rgba(245,158,11,0.08); color: var(--warning); }
+        .badge-sprint.urgent { background: rgba(239,68,68,0.12); color: var(--danger); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:0.8} 50%{opacity:1} }
+
+        /* Roadmap */
+        .roadmap-header-row { display: flex; justify-content: space-between; align-items: center; width: 100%; cursor: pointer; }
+        .roadmap-details { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.04); display: none; }
+        .roadmap-details.expanded { display: block; }
+        .roadmap-step-item { padding: 10px; border-radius: 12px; background: rgba(0,0,0,0.15); margin-bottom: 8px; border-left: 3px solid var(--text-dim); }
+        .roadmap-step-item.active-step { border-left-color: var(--primary); background: rgba(16,185,129,0.01); }
+        .roadmap-step-item.locked-step { opacity: 0.35; }
+        .roadmap-step-item.completed-step { border-left-color: #475569; opacity: 0.5; }
+
+        /* Analytics */
+        .chart-toggle-row { display: flex; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; border: 1px solid var(--border-glass); }
+        .chart-toggle-btn { flex: 1; background: none; border: none; color: var(--text-dim); padding: 8px 0; font-size: 11px; font-weight: 700; border-radius: 8px; cursor: pointer; text-transform: uppercase; }
+        .chart-toggle-btn.active { background: rgba(255,255,255,0.06); color: #fff; }
+        .analytics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+        .stat-box { background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.03); padding: 14px; border-radius: 16px; text-align: center; }
+        .stat-val { font-size: 1.4rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
+        .stat-label { font-size: 10px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Bottom nav */
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 76px;
+            background: var(--nav-bg); border-top: 1px solid var(--border-glass);
+            display: flex; justify-content: space-around; align-items: center;
+            z-index: 50; padding-bottom: env(safe-area-inset-bottom);
+        }
+        .nav-item {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            color: var(--text-dim); background: none; border: none; font-size: 9px;
+            font-weight: 600; cursor: pointer; width: 55px;
+        }
+        .nav-item span { font-size: 18px; }
+        .nav-item.active { color: var(--primary); }
+
+        /* FAB */
+        .fab {
+            position: fixed; bottom: 92px; right: 20px; width: 56px; height: 56px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border-radius: 28px; border: none; color: white; font-size: 26px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            box-shadow: 0 6px 20px rgba(16,185,129,0.35); z-index: 60;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(5,5,8,0.88);
+            z-index: 200; display: none; justify-content: center; align-items: flex-end;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-card {
+            width: 100%; max-width: 480px; background: #0f0f13;
+            border-top-left-radius: 28px; border-top-right-radius: 28px;
+            border: 1px solid var(--border-glass); padding: 24px;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.7);
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-close { background: rgba(255,255,255,0.05); border: none; color: white; width: 30px; height: 30px; border-radius: 15px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 6px; }
+        input[type="text"], input[type="number"], select {
+            width: 100%; padding: 14px; background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; color: white; font-size: 15px; margin-bottom: 16px;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--primary); }
+        .form-row { display: flex; gap: 12px; }
+        .btn-submit { width: 100%; padding: 14px; background: var(--primary); border: none; border-radius: 14px; color: white; font-weight: 700; font-size: 15px; cursor: pointer; }
+        .days-matrix { display: flex; justify-content: space-between; margin-bottom: 16px; gap: 6px; }
+        .day-box { flex: 1; text-align: center; padding: 10px 0; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); font-size: 11px; font-weight: 700; border-radius: 8px; cursor: pointer; color: var(--text-dim); }
+        .day-box.selected { background: rgba(16,185,129,0.15); border-color: var(--primary); color: var(--primary); }
+
+        /* Views */
+        .app-view { display: none; width: 100%; }
+        .app-view.active-view { display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <svg style="width:0;height:0;position:absolute;">
+        <linearGradient id="gradientRing" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#10b981"/>
+            <stop offset="100%" stop-color="#3b82f6"/>
+        </linearGradient>
+    </svg>
+
+    <!-- CLOCK PANEL -->
+    <div class="time-panel">
+        <div>
+            <div class="time-day" id="clockDay">---</div>
+            <div class="time-date" id="clockDate">---</div>
+        </div>
+        <div class="time-clock" id="clockTime">00:00:00</div>
+    </div>
+
+    <!-- FOCUS VIEW -->
+    <div id="view-focus" class="app-view active-view">
+        <div class="card north-star" id="northStarContainer" style="display:none;">
+            <div class="north-star-label">⚡ Active Milestone</div>
+            <div class="north-star-text" id="northStarContent">No milestone active.</div>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+            <div class="dashboard-row">
+                <div class="ring-container">
+                    <svg class="ring-svg">
+                        <circle class="ring-bg" cx="42.5" cy="42.5" r="35"></circle>
+                        <circle class="ring-fill" id="ringFill" cx="42.5" cy="42.5" r="35"></circle>
+                    </svg>
+                    <div class="ring-text"><div id="ringPercent">0%</div><span>SCORE</span></div>
+                </div>
+                <div class="dashboard-info">
+                    <div class="dashboard-streak" id="streakDisplay">0 Days Streak</div>
+                    <div class="progress-wrapper">
+                        <div class="progress-labels">
+                            <span id="todayLabel">Today</span>
+                            <span id="progressText">0% Completed</span>
+                        </div>
+                        <div class="progress-track"><div class="progress-fill" id="progressBar"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <h2>📅 Today's Habits</h2>
+        <ul id="habitList"></ul>
+    </div>
+
+    <!-- ROADMAPS VIEW -->
+    <div id="view-roadmaps" class="app-view">
+        <h2 style="margin-bottom:16px;">🗺️ Multi-Stage Roadmaps</h2>
+        <div id="roadmapList" style="display:flex;flex-direction:column;gap:16px;"></div>
+    </div>
+
+    <!-- DEADLINES VIEW -->
+    <div id="view-deadlines" class="app-view">
+        <h2 style="margin-bottom:16px;">⏳ Active Deadlines</h2>
+        <ul id="sprintList"></ul>
+    </div>
+
+    <!-- INTENTIONS VIEW -->
+    <div id="view-intentions" class="app-view">
+        <h2 style="margin-bottom:16px;">🏆 Monthly Intentions</h2>
+        <ul id="intentionList"></ul>
+    </div>
+
+    <!-- ANALYSIS VIEW -->
+    <div id="view-analysis" class="app-view">
+        <h2>📊 Performance Analysis</h2>
+        <div class="card" style="padding:16px;margin-bottom:16px;height:240px;">
+            <div class="chart-toggle-row">
+                <button class="chart-toggle-btn active" onclick="changeChart('week',this)">Week</button>
+                <button class="chart-toggle-btn" onclick="changeChart('month',this)">Month</button>
+                <button class="chart-toggle-btn" onclick="changeChart('year',this)">Year</button>
+            </div>
+            <div style="position:relative;height:170px;width:100%;"><canvas id="chartCanvas"></canvas></div>
+        </div>
+        <div style="font-size:10px;text-transform:uppercase;font-weight:700;color:var(--text-dim);margin-bottom:6px;letter-spacing:0.5px;">Precision Metrics</div>
+        <div class="analytics-grid">
+            <div class="stat-box" style="grid-column:span 2;background:rgba(16,185,129,0.02);border-color:rgba(16,185,129,0.1);">
+                <div class="stat-val" id="statAccuracy" style="color:#34d399;font-size:1.8rem;">100%</div>
+                <div class="stat-label">Overall Accuracy Score</div>
+            </div>
+            <div class="stat-box"><div class="stat-val" id="statDeadlines" style="color:var(--warning);">0</div><div class="stat-label">Deadlines On Time</div></div>
+            <div class="stat-box"><div class="stat-val" id="statIntentions" style="color:#3b82f6;">0</div><div class="stat-label">Intentions Achieved</div></div>
+            <div class="stat-box"><div class="stat-val" id="statCurStreak" style="color:var(--accent);">0</div><div class="stat-label">Current Streak</div></div>
+            <div class="stat-box"><div class="stat-val" id="statHighStreak" style="color:#10b981;">0</div><div class="stat-label">Highest Streak</div></div>
+            <div class="stat-box" style="grid-column:span 2;"><div class="stat-val" id="statLowStreak" style="color:var(--text-dim);">0</div><div class="stat-label">Lowest Streak Floor</div></div>
+            <div class="stat-box"><div class="stat-val" id="statCompleted">0</div><div class="stat-label">Total Completed</div></div>
+            <div class="stat-box"><div class="stat-val" id="statMissed" style="color:var(--danger);">0</div><div class="stat-label">Total Missed</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- FAB -->
+<button class="fab" onclick="openModal()">+</button>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="modalTitle" style="font-size:1.1rem;font-weight:700;">Add Entry</h3>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <!-- Habit form -->
+        <div id="formHabit" style="display:none;">
+            <label>Habit Name</label>
+            <input type="text" id="habitName" placeholder="E.g., Complete weight training...">
+            <label>Weight (%)</label>
+            <input type="number" id="habitWeight" min="1" max="100" value="25">
+            <label>Target Days</label>
+            <div class="days-matrix">
+                <div class="day-box" onclick="toggleDay(this)" data-day="Mon">M</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Tue">T</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Wed">W</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Thu">T</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Fri">F</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Sat">S</div>
+                <div class="day-box" onclick="toggleDay(this)" data-day="Sun">S</div>
+            </div>
+            <button class="btn-submit" onclick="submitHabit()">Add Habit</button>
+        </div>
+        <!-- Roadmap form -->
+        <div id="formRoadmap" style="display:none;">
+            <div id="roadmapNewView">
+                <label>Roadmap Goal Name</label>
+                <input type="text" id="projectName" placeholder="E.g., Scale body weight to 80kg...">
+                <button class="btn-submit" onclick="submitProject()">Create Roadmap</button>
+            </div>
+            <div id="roadmapStepView" style="display:none;">
+                <label>Milestone Step</label>
+                <input type="text" id="stepName" placeholder="E.g., Stage 1: Hit calorie targets...">
+                <input type="hidden" id="stepProjectId">
+                <button class="btn-submit" onclick="submitStep()" style="background:var(--accent);">Add Milestone</button>
+            </div>
+        </div>
+        <!-- Deadline form -->
+        <div id="formSprint" style="display:none;">
+            <label>Deadline Title</label>
+            <input type="text" id="sprintName" placeholder="E.g., Complete code freeze...">
+            <label>Duration</label>
+            <div class="form-row">
+                <div style="flex:2;"><input type="number" id="sprintDuration" min="1" value="5"></div>
+                <div style="flex:1;"><select id="sprintUnit"><option value="hours">Hours</option><option value="days">Days</option></select></div>
+            </div>
+            <button class="btn-submit" onclick="submitSprint()" style="background:var(--warning);color:#07070a;">Set Deadline</button>
+        </div>
+        <!-- Intention form -->
+        <div id="formIntention" style="display:none;">
+            <label>Monthly Intention</label>
+            <input type="text" id="intentionName" placeholder="E.g., Minimize distractions...">
+            <button class="btn-submit" onclick="submitIntention()">Save Intention</button>
+        </div>
+    </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+    <button class="nav-item active" onclick="switchTab('focus',this)"><span>📅</span>Habits</button>
+    <button class="nav-item" onclick="switchTab('roadmaps',this)"><span>🗺️</span>Roadmaps</button>
+    <button class="nav-item" onclick="switchTab('deadlines',this)"><span>⏳</span>Deadlines</button>
+    <button class="nav-item" onclick="switchTab('intentions',this)"><span>🏆</span>Intentions</button>
+    <button class="nav-item" onclick="switchTab('analysis',this)"><span>📊</span>Analysis</button>
+</nav>
+
+<script>
+    // ── STATE ──
+    const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+    let state = {
+        activeTab: "focus",
+        dailyTasks: [], projects: [], sprints: [], intentions: [],
+        streakCounter: 0, lastDate: "", chartTimeframe: "week",
+        analytics: { highestStreak:0, lowestStreak:0, totalCompleted:0, totalMissed:0, intentionsDone:0, deadlinesOnTime:0 },
+        history: { week:[70,75,80,85,75,90,95], month:[75,82,88,92], year:[70,75,78,82,85,89,91,94,92,95,96,98] }
+    };
+    let chartInstance = null;
+
+    // ── INIT ──
+    window.addEventListener('load', function() {
+        try {
+            const saved = localStorage.getItem('focus_engine_v15');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed && Array.isArray(parsed.dailyTasks)) state = parsed;
+            }
+        } catch(e) {}
+        // Ensure all arrays exist after load
+        if (!state.dailyTasks) state.dailyTasks = [];
+        if (!state.projects) state.projects = [];
+        if (!state.sprints) state.sprints = [];
+        if (!state.intentions) state.intentions = [];
+        if (!state.analytics) state.analytics = { highestStreak:0, lowestStreak:0, totalCompleted:0, totalMissed:0, intentionsDone:0, deadlinesOnTime:0 };
+        if (!state.history) state.history = { week:[70,75,80,85,75,90,95], month:[75,82,88,92], year:[70,75,78,82,85,89,91,94,92,95,96,98] };
+
+        updateClock();
+        setInterval(updateClock, 1000);
+        checkDayReset();
+        setInterval(function(){ checkDayReset(); renderSprints(); }, 60000);
+        render();
+    });
+
+    // ── CLOCK (simple, no z-index, no pointer-events) ──
+    function updateClock() {
+        const now = new Date();
+        const dayEl = document.getElementById('clockDay');
+        const dateEl = document.getElementById('clockDate');
+        const timeEl = document.getElementById('clockTime');
+        if (dayEl) dayEl.textContent = DAY_NAMES[now.getDay()];
+        if (dateEl) dateEl.textContent = MONTHS[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+        if (timeEl) {
+            const h = String(now.getHours()).padStart(2,'0');
+            const m = String(now.getMinutes()).padStart(2,'0');
+            const s = String(now.getSeconds()).padStart(2,'0');
+            timeEl.textContent = h + ':' + m + ':' + s;
+        }
+    }
+
+    // ── SAVE ──
+    function save() {
+        try { localStorage.setItem('focus_engine_v15', JSON.stringify(state)); } catch(e) {}
+    }
+
+    // ── DAY RESET ──
+    function checkDayReset() {
+        const today = new Date().toDateString();
+        if (state.lastDate && state.lastDate !== today) {
+            const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+            const yDay = DAYS[yesterday.getDay()];
+            let activeW = 0, completedW = 0, completedCount = 0, missedCount = 0;
+            state.dailyTasks.forEach(h => {
+                if (h.frequency === "Everyday" || h.frequency.includes(yDay)) {
+                    activeW += h.weight;
+                    if (h.completed) { completedW += h.weight; completedCount++; }
+                    else missedCount++;
+                }
+            });
+
+            // Fix: count completed/missed at day boundary, not on every toggle
+            state.analytics.totalCompleted += completedCount;
+            state.analytics.totalMissed += missedCount;
+
+            // Accuracy % for that day (0–100)
+            const acc = activeW > 0 ? Math.round((completedW / activeW) * 100) : 100;
+
+            // Fix: push to ALL history arrays, not just week
+            state.history.week.push(acc);
+            if (state.history.week.length > 7) state.history.week.shift();
+
+            // Push weekly average into month every 7 days
+            const weekAvg = Math.round(state.history.week.reduce((a,b)=>a+b,0) / state.history.week.length);
+            state.history.month.push(weekAvg);
+            if (state.history.month.length > 4) state.history.month.shift();
+
+            // Push monthly average into year once per month (approx every 30 pushes to week ~4 weeks)
+            const monthAvg = Math.round(state.history.month.reduce((a,b)=>a+b,0) / state.history.month.length);
+            state.history.year.push(monthAvg);
+            if (state.history.year.length > 12) state.history.year.shift();
+
+            // Fix: streak checks if you completed ALL scheduled weight for the day
+            if (activeW > 0 && completedW < activeW) {
+                // Failed today — record lowest streak before resetting
+                if (state.analytics.lowestStreak === 0 || state.streakCounter < state.analytics.lowestStreak) {
+                    state.analytics.lowestStreak = state.streakCounter;
+                }
+                state.streakCounter = 0;
+            } else if (activeW > 0 && completedW >= activeW) {
+                // Completed everything — extend streak
+                state.streakCounter++;
+                if (state.streakCounter > state.analytics.highestStreak) {
+                    state.analytics.highestStreak = state.streakCounter;
+                }
+            }
+            // If no tasks were scheduled that day, streak is unchanged
+
+            // Reset all habits for the new day
+            state.dailyTasks.forEach(h => h.completed = false);
+        }
+        state.lastDate = today;
+        save();
+    }
+
+    // ── TABS ──
+    function switchTab(tab, el) {
+        state.activeTab = tab;
+        document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active-view'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        const view = document.getElementById('view-' + tab);
+        if (view) view.classList.add('active-view');
+        if (el) el.classList.add('active');
+        render();
+    }
+
+    // ── RENDER ALL ──
+    function render() {
+        renderDashboard();
+        renderHabits();
+        renderRoadmaps();
+        renderSprints();
+        renderIntentions();
+        if (state.activeTab === 'analysis') renderAnalytics();
+    }
+
+    // ── DASHBOARD ──
+    function renderDashboard() {
+        const today = DAYS[new Date().getDay()];
+        let totalW = 0, doneW = 0;
+        state.dailyTasks.forEach(h => {
+            if (h.frequency === "Everyday" || h.frequency.includes(today)) {
+                totalW += h.weight;
+                if (h.completed) doneW += h.weight;
+            }
+        });
+        const pct = Math.min(100, doneW);
+        const pb = document.getElementById('progressBar');
+        const pt = document.getElementById('progressText');
+        const rf = document.getElementById('ringFill');
+        const rp = document.getElementById('ringPercent');
+        const sd = document.getElementById('streakDisplay');
+        if (pb) pb.style.width = pct + '%';
+        if (pt) pt.textContent = totalW === 0 ? '0 Tasks Today' : doneW + '% / 100% Weight';
+        if (rf) rf.style.strokeDashoffset = 220 - (220 * pct / 100);
+        if (rp) rp.textContent = pct + '%';
+        if (sd) sd.textContent = state.streakCounter === 0 ? '0 Days Streak' : state.streakCounter + ' Days 🔥';
+
+        // North star
+        const ns = document.getElementById('northStarContainer');
+        const nc = document.getElementById('northStarContent');
+        if (ns && nc) {
+            let found = null;
+            for (const p of state.projects) {
+                const s = p.steps.find(x => !x.completed);
+                if (s) { found = p.title + ' ➔ ' + s.stepText; break; }
+            }
+            ns.style.display = found ? 'block' : 'none';
+            if (found) nc.textContent = found;
+        }
+    }
+
+    // ── HABITS ──
+    function renderHabits() {
+        const list = document.getElementById('habitList');
+        if (!list || state.activeTab !== 'focus') return;
+        list.innerHTML = '';
+        const today = DAYS[new Date().getDay()];
+        const tasks = state.dailyTasks.filter(h => h.frequency === "Everyday" || h.frequency.includes(today));
+        if (tasks.length === 0) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">No habits scheduled today.</div>'; return; }
+        tasks.forEach(h => {
+            const li = document.createElement('li');
+            if (h.completed) li.classList.add('completed');
+            li.innerHTML = `<div class="flex-row"><input type="checkbox" ${h.completed?'checked':''} onchange="toggleHabit(${h.id})"><div><div class="item-text">${h.text}</div><div class="item-subtext">🔄 ${h.frequency}</div></div></div><div class="flex-row"><span class="badge badge-weight">${h.weight}%</span><button class="btn-delete" onclick="deleteHabit(${h.id})">🗑️</button></div>`;
+            list.appendChild(li);
+        });
+    }
+    function toggleHabit(id) {
+        const h = state.dailyTasks.find(x => x.id === id);
+        if (h) { h.completed = !h.completed; save(); render(); }
+    }
+    function deleteHabit(id) { state.dailyTasks = state.dailyTasks.filter(x => x.id !== id); save(); render(); }
+
+    // ── ROADMAPS ──
+    function renderRoadmaps() {
+        const container = document.getElementById('roadmapList');
+        if (!container || state.activeTab !== 'roadmaps') return;
+        container.innerHTML = '';
+        if (state.projects.length === 0) { container.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim);font-size:13px;">No roadmaps yet.</div>'; return; }
+        state.projects.forEach(p => {
+            const done = p.steps.filter(s=>s.completed).length;
+            const total = p.steps.length;
+            const pct = total > 0 ? Math.round((done/total)*100) : 0;
+            let stepsHtml = ''; let foundActive = false;
+            p.steps.forEach(s => {
+                let cls = 'roadmap-step-item';
+                if (s.completed) cls += ' completed-step';
+                else if (!foundActive) { cls += ' active-step'; foundActive = true; }
+                else cls += ' locked-step';
+                stepsHtml += `<div class="${cls}"><div class="flex-row" style="justify-content:space-between;width:100%;"><div class="flex-row"><input type="checkbox" ${s.completed?'checked':''} onchange="toggleStep(${p.id},${s.id})"><span style="font-size:13px;font-weight:500;">${s.stepText}</span></div><button class="btn-delete" onclick="deleteStep(${p.id},${s.id})">×</button></div></div>`;
+            });
+            const card = document.createElement('div'); card.className = 'card';
+            card.innerHTML = `<div class="roadmap-header-row" onclick="toggleRoadmap(${p.id})"><div style="flex:1;padding-right:10px;"><h3 style="font-size:14px;font-weight:700;color:#fff;margin-bottom:2px;">${p.title}</h3><div style="font-size:11px;color:var(--text-dim);">Milestones: ${done}/${total}</div></div><div class="flex-row"><button onclick="event.stopPropagation();openModalStep(${p.id})" style="background:rgba(255,255,255,0.05);color:#fff;border:none;padding:6px 10px;border-radius:8px;font-size:11px;font-weight:700;">+ Step</button><button onclick="event.stopPropagation();deleteProject(${p.id})" class="btn-delete">🗑️</button></div></div><div class="progress-wrapper" style="margin-top:10px;"><div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);"></div></div></div><div class="roadmap-details ${p.isExpanded?'expanded':''}" id="rdm-${p.id}"><div style="display:flex;flex-direction:column;">${stepsHtml||'<div style="font-size:11px;color:var(--text-dim);font-style:italic;">No milestones yet.</div>'}</div></div>`;
+            container.appendChild(card);
+        });
+    }
+    function toggleRoadmap(id) { const p = state.projects.find(x=>x.id===id); if(p){p.isExpanded=!p.isExpanded; save(); const el=document.getElementById('rdm-'+id); if(el)el.classList.toggle('expanded');} }
+    function toggleStep(pId,sId) { const p=state.projects.find(x=>x.id===pId); if(p){const s=p.steps.find(x=>x.id===sId); if(s){s.completed=!s.completed; save(); render();}} }
+    function deleteStep(pId,sId) { const p=state.projects.find(x=>x.id===pId); if(p){p.steps=p.steps.filter(x=>x.id!==sId); save(); render();} }
+    function deleteProject(id) { state.projects=state.projects.filter(x=>x.id!==id); save(); render(); }
+
+    // ── SPRINTS ──
+    function renderSprints() {
+        const list = document.getElementById('sprintList');
+        if (!list || state.activeTab !== 'deadlines') return;
+        list.innerHTML = '';
+        if (state.sprints.length === 0) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">No active deadlines.</div>'; return; }
+        const now = Date.now();
+        state.sprints.forEach(s => {
+            const diff = s.expiresAt - now; let label = ''; let urgent = false;
+            if (s.completed || diff <= 0) label = diff <= 0 ? '❌ Expired' : '✅ Done';
+            else {
+                const mins = Math.floor(diff/60000); const hrs = Math.floor(mins/60); const days = Math.floor(hrs/24);
+                if (days > 0) label = days+'d '+( hrs%24)+'h left';
+                else { label = '⚠️ '+(hrs%24)+'h '+(mins%60)+'m left'; urgent = true; }
+            }
+            const li = document.createElement('li');
+            if (s.completed) li.classList.add('completed');
+            if (!s.completed && diff <= 0) li.style.borderLeft = '4px solid var(--danger)';
+            li.innerHTML = `<div class="flex-row"><input type="checkbox" ${s.completed?'checked':''} onchange="toggleSprint(${s.id})"><div class="item-text">${s.text}</div></div><div class="flex-row"><span class="badge badge-sprint ${urgent&&!s.completed?'urgent':''}">${label}</span><button class="btn-delete" onclick="deleteSprint(${s.id})">🗑️</button></div>`;
+            list.appendChild(li);
+        });
+    }
+    function toggleSprint(id) {
+        const s = state.sprints.find(x=>x.id===id);
+        if (s) { s.completed=!s.completed; if(s.completed&&(s.expiresAt-Date.now()>0))state.analytics.deadlinesOnTime++; save(); render(); }
+    }
+    function deleteSprint(id) { state.sprints=state.sprints.filter(x=>x.id!==id); save(); render(); }
+
+    // ── INTENTIONS ──
+    function renderIntentions() {
+        const container = document.getElementById('intentionList');
+        if (!container || state.activeTab !== 'intentions') return;
+        container.innerHTML = '';
+        if (state.intentions.length === 0) { container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px;">No intentions set.</div>'; return; }
+        state.intentions.forEach(i => {
+            const li = document.createElement('li');
+            if (i.completed) li.classList.add('completed');
+            li.innerHTML = `<div class="flex-row"><input type="checkbox" ${i.completed?'checked':''} onchange="toggleIntention(${i.id})"><div class="item-text">${i.text}</div></div><button class="btn-delete" onclick="deleteIntention(${i.id})">🗑️</button>`;
+            container.appendChild(li);
+        });
+    }
+    function toggleIntention(id) { const i=state.intentions.find(x=>x.id===id); if(i){i.completed=!i.completed; state.analytics.intentionsDone+=i.completed?1:-1; save(); render();} }
+    function deleteIntention(id) { state.intentions=state.intentions.filter(x=>x.id!==id); save(); render(); }
+
+    // ── ANALYTICS ──
+    function changeChart(tf, el) {
+        state.chartTimeframe = tf;
+        document.querySelectorAll('.chart-toggle-btn').forEach(b=>b.classList.remove('active'));
+        if (el) el.classList.add('active');
+        save(); renderAnalytics();
+    }
+    function renderAnalytics() {
+        const total = state.analytics.totalCompleted + state.analytics.totalMissed;
+        const acc = total > 0 ? Math.round((state.analytics.totalCompleted/total)*100) : 100;
+        const set = (id,val) => { const el=document.getElementById(id); if(el)el.textContent=val; };
+        set('statAccuracy', acc+'%'); set('statDeadlines', state.analytics.deadlinesOnTime);
+        set('statIntentions', state.analytics.intentionsDone); set('statCurStreak', state.streakCounter);
+        set('statHighStreak', state.analytics.highestStreak); set('statLowStreak', state.analytics.lowestStreak);
+        set('statCompleted', state.analytics.totalCompleted); set('statMissed', state.analytics.totalMissed);
+
+        const canvas = document.getElementById('chartCanvas'); if (!canvas) return;
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+        let labels, data;
+        if (state.chartTimeframe === 'week') { labels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; data=state.history.week; }
+        else if (state.chartTimeframe === 'month') { labels=['Wk 1','Wk 2','Wk 3','Wk 4']; data=state.history.month; }
+        else { labels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; data=state.history.year; }
+        chartInstance = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: { labels, datasets: [{ label:'Accuracy', data, borderColor:'#10b981', borderWidth:3, pointBackgroundColor:'#10b981', pointBorderColor:'#07070a', pointBorderWidth:2, pointRadius:4, tension:0.35, fill:true,
+                backgroundColor: ctx => { const a=ctx.chart.chartArea; if(!a)return null; const g=ctx.chart.ctx.createLinearGradient(0,a.top,0,a.bottom); g.addColorStop(0,'rgba(16,185,129,0.25)'); g.addColorStop(1,'rgba(16,185,129,0)'); return g; }
+            }]},
+            options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:10}}}, y:{min:0,max:100,grid:{color:'rgba(255,255,255,0.03)'},ticks:{stepSize:25,color:'#64748b',font:{size:9}}}}}
+        });
+    }
+
+    // ── MODAL ──
+    function openModal() {
+        const tab = state.activeTab;
+        document.querySelectorAll('#formHabit,#formRoadmap,#formSprint,#formIntention').forEach(f=>f.style.display='none');
+        const title = document.getElementById('modalTitle');
+        if (tab === 'focus') { if(title)title.textContent='Add New Habit'; document.getElementById('formHabit').style.display='block'; }
+        else if (tab === 'roadmaps') { if(title)title.textContent='Create Roadmap'; document.getElementById('formRoadmap').style.display='block'; document.getElementById('roadmapNewView').style.display='block'; document.getElementById('roadmapStepView').style.display='none'; }
+        else if (tab === 'deadlines') { if(title)title.textContent='Set Deadline'; document.getElementById('formSprint').style.display='block'; }
+        else if (tab === 'intentions') { if(title)title.textContent='Add Intention'; document.getElementById('formIntention').style.display='block'; }
+        document.getElementById('modalOverlay').classList.add('open');
+    }
+    function openModalStep(projId) {
+        document.querySelectorAll('#formHabit,#formRoadmap,#formSprint,#formIntention').forEach(f=>f.style.display='none');
+        const title = document.getElementById('modalTitle'); if(title)title.textContent='Add Milestone Step';
+        document.getElementById('formRoadmap').style.display='block';
+        document.getElementById('roadmapNewView').style.display='none';
+        document.getElementById('roadmapStepView').style.display='block';
+        document.getElementById('stepProjectId').value = projId;
+        document.getElementById('modalOverlay').classList.add('open');
+    }
+    function closeModal() {
+        document.getElementById('modalOverlay').classList.remove('open');
+        ['habitName','projectName','stepName','sprintName','intentionName'].forEach(id=>{ const el=document.getElementById(id); if(el)el.value=''; });
+        document.querySelectorAll('.day-box').forEach(b=>b.classList.remove('selected'));
+    }
+    function handleOverlayClick(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+    function toggleDay(el) { if(el) el.classList.toggle('selected'); }
+
+    // ── SUBMIT FORMS ──
+    function submitHabit() {
+        const name = document.getElementById('habitName').value.trim();
+        let weight = parseInt(document.getElementById('habitWeight').value);
+        if (!name) return; if (isNaN(weight)||weight<1) weight=1;
+        const days = Array.from(document.querySelectorAll('.day-box.selected')).map(el=>el.dataset.day);
+        const freq = days.length > 0 ? days.join(', ') : 'Everyday';
+        state.dailyTasks.push({ id:Date.now(), text:name, weight, frequency:freq, completed:false });
+        closeModal(); save(); render();
+    }
+    function submitProject() {
+        const name = document.getElementById('projectName').value.trim(); if (!name) return;
+        state.projects.push({ id:Date.now(), title:name, steps:[], isExpanded:true });
+        closeModal(); save(); render();
+    }
+    function submitStep() {
+        const name = document.getElementById('stepName').value.trim();
+        const pid = parseInt(document.getElementById('stepProjectId').value);
+        if (!name || isNaN(pid)) return;
+        const p = state.projects.find(x=>x.id===pid);
+        if (p) p.steps.push({ id:Date.now(), stepText:name, completed:false });
+        closeModal(); save(); render();
+    }
+    function submitSprint() {
+        const name = document.getElementById('sprintName').value.trim();
+        let dur = parseInt(document.getElementById('sprintDuration').value);
+        const unit = document.getElementById('sprintUnit').value;
+        if (!name) return; if (isNaN(dur)||dur<1) dur=1;
+        const ms = unit==='hours' ? dur*3600000 : dur*86400000;
+        state.sprints.push({ id:Date.now(), text:name, expiresAt:Date.now()+ms, completed:false });
+        closeModal(); save(); render();
+    }
+    function submitIntention() {
+        const name = document.getElementById('intentionName').value.trim(); if (!name) return;
+        state.intentions.push({ id:Date.now(), text:name, completed:false });
+        closeModal(); save(); render();
+    }
+</script>
+</body>
+</html>
